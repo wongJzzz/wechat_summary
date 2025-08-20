@@ -1,0 +1,18 @@
+[project]
+name = "wechat-summary"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "loguru>=0.7.3",
+    "openai>=1.100.2",
+    "pyarmor>=9.1.8",
+    "pyinstaller>=6.15.0",
+    "pyside6>=6.6.3.1",
+    "wxauto>=39.1.15",
+]
+
+[[tool.uv.index]]
+url="https://mirrors.aliyun.com/pypi/simple/"
+default=true

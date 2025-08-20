@@ -44,21 +44,28 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
     wx = WeChat()
     wx.ChatWith(group_name)
 
+    # 获取当天的起始时间（0点0分0秒）
+    today_start = (datetime.datetime.now() - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
     if hours is None:
         start_time = datetime.datetime.now() - datetime.timedelta(hours=1)
     else:
         # 支持小数点形式的小时数
         start_time = datetime.datetime.now() - datetime.timedelta(hours=float(hours))
     
-    logger.info(f"开始获取 {start_time} 之后的消息")
-    print(f"开始获取 {start_time} 之后的消息")
+    # 确保开始时间不早于今天凌晨
+    start_time = max(start_time, today_start)
+    
+    logger.info(f"开始获取 {start_time} 之后的消息，仅包含当天消息")
+    print(f"开始获取 {start_time} 之后的消息，仅包含当天消息")
     
     all_messages = []
     temp_messages = []
     processed_msgs = set()
     continue_loading = True
     load_count = 0
-    max_load_attempts = 50
+    max_load_attempts = 10
+    msg_time = None
 
     current_msgs = wx.GetAllMessage()
     if current_msgs:
@@ -69,9 +76,11 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
                 
             processed_msgs.add(msg_id)
             
-            if msg.type == 'time':
+            # 解析消息时间
+            if msg.type == 'sys' or msg.type == 'time':
                 msg_time = parse_message_time(msg.content)
-                if msg_time and msg_time < start_time:
+                # 如果消息时间不是今天或早于指定时间，则停止加载
+                if msg_time and (msg_time.date() < today_start.date() or msg_time < start_time):
                     continue_loading = False
                     break
             
@@ -86,7 +95,8 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
                     temp_messages.append(('self', msg.sender, msg.content))
                     all_messages.append(f'{msg.sender}: {msg.content}')
             elif msg.type == 'time':
-                temp_messages.append(('time', msg.time))
+                temp_messages.append(('time', msg.content))
+                all_messages.append(f'[时间] {msg.content}')
             elif msg.type == 'recall':
                 temp_messages.append(('recall', msg.content))
                 all_messages.append(f'撤回消息: {msg.content}')
@@ -95,6 +105,7 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
         wx.LoadMoreMessage()
         time.sleep(2)
         load_count += 1
+        print(f"加载第 {load_count} 次消息...")
         
         current_msgs = wx.GetAllMessage()
         if not current_msgs:
@@ -103,40 +114,56 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
         for msg in reversed(current_msgs):
             msg_id = f"{msg.content}_{msg.sender}_{msg.type}"
             if msg_id in processed_msgs:
-                continue
+                pass
                 
             processed_msgs.add(msg_id)
             
-            if msg.type == 'sys':
+            # 解析消息时间
+            if msg.attr == 'system' or msg.attr == 'time':
                 msg_time = parse_message_time(msg.content)
-                if msg_time and msg_time < start_time:
+                print(f"解析到消息时间: {msg_time}")
+                # 如果消息时间不是今天或早于指定时间，则停止加载
+                if msg_time and (msg_time.date() < today_start.date() or msg_time < start_time):
                     continue_loading = False
                     break
             
-            if msg.type == 'sys':
+            if msg.attr == 'system':
                 temp_messages.append(('sys', msg.content))
                 all_messages.append(msg.content)
-            elif msg.type == 'friend':
+            elif msg.attr == 'friend':
                 temp_messages.append(('friend', msg.sender, msg.content))
                 all_messages.append(f'{msg.sender}: {msg.content}')
-            elif msg.type == 'self':
+            elif msg.attr == 'self':
                 if not msg.content.startswith("### 群聊精华总结"):
                     temp_messages.append(('self', msg.sender, msg.content))
                     all_messages.append(f'{msg.sender}: {msg.content}')
-            elif msg.type == 'time':
-                temp_messages.append(('time', msg.time))
-            elif msg.type == 'recall':
+            elif msg.attr == 'time':
+                temp_messages.append(('time', msg.content))
+                all_messages.append(f'[时间] {msg.content}')
+            elif msg.attr == 'recall':
                 temp_messages.append(('recall', msg.content))
                 all_messages.append(f'撤回消息: {msg.content}')
 
     logger.info(f"共加载 {len(processed_msgs)} 条消息")
     print(f"共加载 {len(processed_msgs)} 条消息")
-    print(f"起始时间为{msg_time}")
+    if msg_time:
+        print(f"起始时间为 {msg_time}")
     
     all_messages.reverse()
     temp_messages.reverse()
+
+    with open("logs/chat_history.txt", "w", encoding="utf-8") as f:
+        for msg in all_messages:
+            f.write(msg + "\n")
+    logger.info("聊天记录已保存到 chat_history.txt")
+
+    with open("logs/chat_history_temp.txt", "w", encoding="utf-8") as f:
+        for msg in temp_messages:
+            f.write(str(msg) + "\n")
+    logger.info("临时聊天记录已保存到 chat_history_temp.txt")
     
-    logger.info(f"【系统消息】{msg_time}")
+    if msg_time:
+        logger.info(f"【系统消息】{msg_time}")
     for msg in temp_messages:
         if msg[0] == 'sys':
             logger.info(f'【系统消息】{msg[1]}')
@@ -258,7 +285,7 @@ def send_summary(group_name, summary, max_retries=3):
 
 
 if __name__ == "__main__":
-    group_name = "VictorAI交流群"
+    group_name = "大数据开发小组"
     
     try:
         summary = get_wechat_messages(group_name, 1)
@@ -276,4 +303,3 @@ if __name__ == "__main__":
             
     except Exception as e:
         logger.error(f"程序执行出错：{str(e)}")
-
