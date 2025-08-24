@@ -64,7 +64,7 @@ def get_wechat_messages(group_name, hours=None, ai_config=None, prompt=None):
     processed_msgs = set()
     continue_loading = True
     load_count = 0
-    max_load_attempts = 10
+    max_load_attempts = 50
     msg_time = None
 
     current_msgs = wx.GetAllMessage()
@@ -285,10 +285,10 @@ def send_summary(group_name, summary, max_retries=3):
 
 
 if __name__ == "__main__":
-    group_name = "大数据开发小组"
+    group_name = "steam硬核鸽子（每日一句粤语）"
     
     try:
-        summary = get_wechat_messages(group_name, 1)
+        summary = get_wechat_messages(group_name, 23)
         if summary:
             saved_file = save_summary(group_name, summary)
             if saved_file:
